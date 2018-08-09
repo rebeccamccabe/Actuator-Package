@@ -50,10 +50,6 @@ varsToStream = [ 							\
 	FX_MOT_VOLT, FX_MOT_CURR				\
 ]
 
-starttime = 0
-def busySleepUntil(t):
-	while(datetime.datetime.now())
-
 def experiment(devId0, devId1):
 
 	# configure streams...
