@@ -12,6 +12,9 @@ from flexseapython.flexsea_demo.positioncontrol import fxPositionControl
 from flexseapython.flexsea_demo.two_devices_positioncontrol import fxTwoDevicePositionControl
 from flexseapython.flexsea_demo.two_devices_leaderfollower import fxLeaderFollower
 
+from flexseapython.flexsea_demo.dyno_run import dynoRun
+
+
 #Specify the number of devices - this has to be consistent with com.txt
 FLEXSEA_DEVICES = 1
 
@@ -26,7 +29,7 @@ def main():
 #	devIds = loadAndGetDevice(['COM3', 'COM13'])
 	try:
 		expNumb = selectExperiment()
-		if(expNumb < 5):
+		if(expNumb < 5 or expNumb==7):
 			experiments[expNumb][0](devIds[0])
 		else:
 			experiments[expNumb][0](devIds[0], devIds[1])
@@ -41,7 +44,8 @@ experiments = [ 									\
 		(fxPositionControl, "Position Control"),	\
         (fxFindPoles,       "Find Poles"),			\
         (fxTwoDevicePositionControl,    "Two Device Position Control"),     \
-        (fxLeaderFollower,              "Two Device Leader Follower Control"),
+        (fxLeaderFollower,              "Two Device Leader Follower Control"), \
+        (dynoRun, 			"Dyno with voltage control"),
 ]
 
 def selectExperiment():
