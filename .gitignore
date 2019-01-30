@@ -2,5 +2,4 @@
 __pycache__
 *.pyc
 *.project
-*.csv
 test_scripts/build/
