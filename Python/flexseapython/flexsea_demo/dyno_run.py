@@ -1,37 +1,54 @@
 # code for dyno testing
 # Rebecca McCabe 1-16-19
-# Last updated 1-24-19
+# Last updated 1-25-19
 
 from time import sleep, ctime
 import random, csv
-from numpy import arange
+import numpy as np
 import os, sys
 
-dir = os.path.dirname(os.path.abspath(__file__)) + r'\Actuator-Package\Python'
+dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(dir)
 from flexseapython.pyFlexsea import *
 from flexseapython.pyFlexsea_def import *
 from flexseapython.fxUtil import *
 
+###################### TEST PARAMETERS ##########################################
 
-labels = ["State time", 					\
-"encoder angle", "motor voltage", "torque"	\
-]
+deltaRpmThreshold = 10 # expected delta rpm from reading to reading with no acceleration. Assume equilibrium when the delta rpm is below this threshold.
+readingTime = .05   # period in seconds with which to read velocities to detect equilibrium. If this is too small, the code will presume that the deltaRpm is due to noise when it really is due to acceleration. 
+
+testVmin = 1
+testVmax = 4.6
+testVstep = .2
+testVs = np.arange(testVmin, testVmax+testVstep, testVstep)
+
+loadVmin = 1
+loadVmax = 2
+loadVstep = 1
+loadVs = np.arange(loadVmin, loadVmax+loadVstep, loadVstep)
+
+################### DATA STREAM PARAMETERS ######################################
+
+labels = ["torque", "testVmeas", "time", "encVelocity", "encAngle"]
 
 varsToStream = [ 							\
-	FX_STATETIME, 							\
-	FX_ENC_ANG,								\
+	FX_GEN_VAR_0,							\
 	FX_MOT_VOLT,							\
-	FX_GEN_VAR_0							\
+	FX_STATETIME,							\
+	FX_ENC_VEL,								\
+	FX_ENC_ANG								\
 ]
 
 ENCODER_COUNT_PER_REV = 16384 # 2^14 because 14 bits
 CLOCK_COUNT_PER_SEC = 1882 # determined experimentally by comparing STATETIME readings with python datetime
 
-accelThreshold = 3 # rpm / s. Assume equilibrium when acceleration is below this threshold
-readingTime = .1   # period in seconds with which to read velocities to detect equilibrium
+dataNames = ["testV", "loadV", "myRpm", "theirRpm", "torque", "testVmeas", "time"] #TODO: eventually add temp and current
+numDataPts = len(testVs)*len(loadVs)
+data = np.zeros((len(dataNames),numDataPts))
 
-#motorIds = {'test': 123, 'load': 456}
+
+######################## FUNCTIONS #################################################
 
 def setV(motorID, volts):
 	mV = volts * 1000
@@ -42,25 +59,15 @@ def getRPM(motorID):
 	angOld = None
 	while angOld == None: # wait until it is reading data
 		[angOld, timeOld] = fxReadDevice(motorID, [FX_ENC_ANG, FX_STATETIME])
-		#print('angOld ',angOld)
-		#print('timeOld ',timeOld)
 	
-	#angOld = random.randint(1,10)
 	sleep(readingTime)
 	[angNew, timeNew] = fxReadDevice(motorID, [FX_ENC_ANG, FX_STATETIME])
-	#print('angNew ',angNew)
-	#print('timeNew ',timeNew)
-	#angNew = random.randint(1,10)
+	
 	deltaRevs = (angNew - angOld) / ENCODER_COUNT_PER_REV
 	deltaSeconds = (timeNew - timeOld) / CLOCK_COUNT_PER_SEC
 	rpm = deltaRevs / (deltaSeconds/60)
 	print('Read rpm ', rpm, ' from the ', motorID, ' motor.')
 	return rpm
-
-# def getTorque():
-# 	torque = random.random()
-# 	print('Read torque ', torque, ' Nm.')
-# 	return torque
 
 #def streamSetup(loadID, testID):
 def streamSetup(testID):
@@ -76,15 +83,16 @@ def streamSetup(testID):
 		sys.exit(-1)
 
 def makeCSV(labels, data):
-	pass
-	# filename = 'dynodata ' + ctime() + '.csv'
-	# with open(filename, 'wb') as csvfile:
-	# 	filewriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-	# 	filewriter.writerow(labels)
-	# 	for row in data:
-	# 		filewriter.writerow(row)
-	
-	# log to csv
+	timestamp = ctime().replace(" ","_").replace(":","_")
+	filename = "dynoCSVs/dynodata_" + timestamp + ".csv"
+
+	print('csv labels ', labels)
+
+	with open(filename, 'w') as csvfile:
+		filewriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+		filewriter.writerow(labels)
+		for i in range(data.shape[1]):
+			filewriter.writerow(data[:,i])
 
 #def dynoRun(loadID, testID):
 def dynoRun(testID):
@@ -97,37 +105,31 @@ def dynoRun(testID):
 
 	print('control mode has been set')
 
-	testVmin = 1
-	testVmax = 4.7
-	testVstep = .1
-	testVs = arange(testVmin, testVmax+testVstep, testVstep)
+	counter=0
+	for loadV in loadVs:
+		for testV in testVs:
+			setV(testID, testV)
 
-	loadVmin = 10
-	loadVmax = 20
-	loadVstep = 5
-	loadVs = arange(loadVmin, loadVmax+loadVstep, loadVstep)
+			#setV(loadID, loadV)
+			print('pretending to set loadV ', loadV)
 
-	# data = []
+			deltaRpm = 10*deltaRpmThreshold # arbitrary high start value	
+			rpmOld = getRPM(testID)
+			while deltaRpm > deltaRpmThreshold:			
+				sleep(readingTime)
+				rpmNew = getRPM(testID)
+				deltaRpm = abs(rpmNew - rpmOld)
+				print('deltaRpm: ', deltaRpm)
+				rpmOld = rpmNew
+			print('Equilibrium reached.\n')	
 
+			[torque, testVmeas, time, encVel, encAng] = fxReadDevice(testID, varsToStream)
+			print('got data')
+			data[:,counter] = [testV, loadV, rpmNew, encVel, torque, testVmeas, time]
+			counter+=1
 	
-	#for loadV in loadVs:
-	for testV in testVs:
-		setV(testID, testV)
-		#setV(loadID, loadV)
-
-		accel = 10*accelThreshold # arbitrary high start value	
-		rpmOld = getRPM(testID)
-		while accel > accelThreshold:			
-			sleep(readingTime)
-			rpmNew = getRPM(testID)
-			accel = abs((rpmNew - rpmOld)/readingTime)
-			print('Acceleration: ', accel)
-			rpmOld = rpmNew
-		print('Equilibrium reached.')	
-		
-	# 	newData = fxReadDevice(testID, varsToStream)
-	# 	printData(labels, newData)
-	# 	data = data + newData
+	print(dataNames)
+	makeCSV(dataNames, data)
 	
 	print('Turning off control...')
 	#setControlMode(loadID, CTRL_NONE)
@@ -135,7 +137,6 @@ def dynoRun(testID):
 	sleep(0.2)
 	#fxStopStreaming(loadID)
 	fxStopStreaming(testID)
-	#makeCSV(labels, data)
 
 
 if __name__ == '__main__':
